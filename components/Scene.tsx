@@ -2,7 +2,7 @@
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { ContactShadows } from "@react-three/drei";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import * as THREE from "three";
 import type { Board, GameState } from "@/lib/game";
 
@@ -14,20 +14,101 @@ type Props = {
   onBand: (from: number, to: number) => void;
   /** tutorial only: a band that pulls itself from one peg to another */
   ghost?: { from: number; to: number; key: number } | null;
+  /** bump to put the camera back to the starting angle */
+  resetView?: number;
 };
 
 const PEG_H = 0.34;
 const BAND_Y = 0.24;
 
-/** Keeps the whole board in view on portrait phones as well as wide screens. */
-function Rig({ radius }: { radius: number }) {
+/** Camera orbit state, shared by the camera rig and the pointer handlers. */
+type View = { yaw: number; pitch: number; zoom: number; ty: number; tp: number; tz: number };
+const BASE_PITCH = Math.atan2(11.5, 7.5);
+const PITCH_MIN = 0.42;   // lowest tilt: board seen from the side
+const PITCH_MAX = 1.48;   // highest tilt: almost straight down
+const ZOOM_MIN = 0.55;
+const ZOOM_MAX = 1.7;
+const freshView = (): View => ({ yaw: 0, pitch: BASE_PITCH, zoom: 1, ty: 0, tp: BASE_PITCH, tz: 1 });
+
+/** Keeps the whole board in view on portrait phones as well as wide screens, and eases toward the target orbit. */
+function Rig({ radius, view }: { radius: number; view: RefObject<View> }) {
   const { camera, size } = useThree();
-  useEffect(() => {
+  useFrame((_, dt) => {
+    const v = view.current;
+    const k = 1 - Math.exp(-dt * 12);
+    v.yaw += (v.ty - v.yaw) * k;
+    v.pitch += (v.tp - v.pitch) * k;
+    v.zoom += (v.tz - v.zoom) * k;
     const aspect = size.width / size.height;
-    const k = ((radius + 1.4) / 4.6) * Math.max(1, 0.82 / aspect);
-    camera.position.set(0, 11.5 * k, 7.5 * k);
+    const fit = ((radius + 1.4) / 4.6) * Math.max(1, 0.82 / aspect);
+    const d = Math.hypot(11.5, 7.5) * fit * v.zoom;
+    camera.position.set(
+      Math.sin(v.yaw) * Math.cos(v.pitch) * d,
+      Math.sin(v.pitch) * d,
+      Math.cos(v.yaw) * Math.cos(v.pitch) * d
+    );
     camera.lookAt(0, 0, 0);
-  }, [camera, size, radius]);
+  });
+  return null;
+}
+
+/** Drag on anything that isn't a band drag to orbit; pinch or scroll to zoom. */
+function OrbitInput({ view, claimed }: { view: RefObject<View>; claimed: RefObject<boolean> }) {
+  const { gl } = useThree();
+  useEffect(() => {
+    const el = gl.domElement;
+    const pts = new Map<number, { x: number; y: number }>();
+    let pinch = 0;
+    const spread = () => {
+      const [a, b] = [...pts.values()];
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    };
+    const down = (e: PointerEvent) => {
+      if (e.target !== el) return;
+      // a band drag started on a peg in this same event: leave it alone
+      if (claimed.current) { claimed.current = false; return; }
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 2) pinch = spread();
+    };
+    const move = (e: PointerEvent) => {
+      const p = pts.get(e.pointerId);
+      if (!p) return;
+      const v = view.current;
+      if (pts.size === 1) {
+        v.ty -= ((e.clientX - p.x) / el.clientWidth) * Math.PI * 1.6;
+        v.tp = Math.min(PITCH_MAX, Math.max(PITCH_MIN, v.tp + ((e.clientY - p.y) / el.clientHeight) * 2.2));
+      }
+      p.x = e.clientX;
+      p.y = e.clientY;
+      if (pts.size === 2) {
+        const s = spread();
+        if (pinch > 0) v.tz = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.tz * (pinch / s)));
+        pinch = s;
+      }
+    };
+    const up = (e: PointerEvent) => {
+      pts.delete(e.pointerId);
+      pinch = pts.size === 2 ? spread() : 0;
+    };
+    const wheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const v = view.current;
+      v.tz = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.tz * Math.exp(e.deltaY * 0.0015)));
+    };
+    // window listeners run after three-fiber's own handlers for the same event
+    window.addEventListener("pointerdown", down);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    el.addEventListener("wheel", wheel, { passive: false });
+    return () => {
+      window.removeEventListener("pointerdown", down);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      el.removeEventListener("wheel", wheel);
+    };
+  }, [gl, view, claimed]);
   return null;
 }
 
@@ -196,7 +277,7 @@ function DemoDrag({ a, b }: { a: { x: number; z: number }; b: { x: number; z: nu
   );
 }
 
-function World({ board, state, colors, interactive, onBand, ghost }: Props) {
+function World({ board, state, colors, interactive, onBand, ghost, claimed }: Props & { claimed: RefObject<boolean> }) {
   const group = useRef<THREE.Group>(null);
   // the band being pulled: anchored on a peg, free end follows the finger
   const [drag, setDrag] = useState<{ from: number; x: number; z: number } | null>(null);
@@ -247,6 +328,7 @@ function World({ board, state, colors, interactive, onBand, ghost }: Props) {
           const p = local(e.point);
           const from = nearest(p.x, p.z, 0.5);
           if (from < 0) return setPicked(null);
+          claimed.current = true;
           (e.target as Element).setPointerCapture?.(e.pointerId);
           setDrag({ from, x: p.x, z: p.z });
         }}
@@ -283,9 +365,19 @@ function World({ board, state, colors, interactive, onBand, ghost }: Props) {
 }
 
 export default function Scene(props: Props) {
+  const view = useRef<View>(freshView());
+  const claimed = useRef(false);
+  useEffect(() => {
+    const v = view.current;
+    // spin back the short way round
+    v.ty = Math.round(v.yaw / (Math.PI * 2)) * Math.PI * 2;
+    v.tp = BASE_PITCH;
+    v.tz = 1;
+  }, [props.resetView]);
   return (
     <Canvas shadows dpr={[1, 2]} camera={{ fov: 38, position: [0, 11.5, 7.5] }}>
-      <Rig radius={props.board.radius} />
+      <Rig radius={props.board.radius} view={view} />
+      <OrbitInput view={view} claimed={claimed} />
       <hemisphereLight args={["#eef2ff", "#4a3a30", 1.7]} />
       <directionalLight
         position={[5, 10, 4]} intensity={2.1} castShadow
@@ -294,7 +386,7 @@ export default function Scene(props: Props) {
       />
       <pointLight position={[-6, 4, -5]} intensity={40} color="#7aa2ff" />
       <pointLight position={[6, 3, 6]} intensity={30} color="#ffb070" />
-      <World {...props} />
+      <World {...props} claimed={claimed} />
       <ContactShadows position={[0, -0.52, 0]} scale={22} blur={2.6} opacity={0.55} far={3} />
     </Canvas>
   );

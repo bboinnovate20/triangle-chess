@@ -62,6 +62,7 @@ export default function Game() {
   const [state, setState] = useState<GameState>(() => newGame(board, config.seats.length));
   const [gameId, setGameId] = useState(0);
   const [oops, setOops] = useState(0);
+  const [resetView, setResetView] = useState(0);
   const [demo, setDemo] = useState<number | null>(null);
   const [ghost, setGhost] = useState<{ from: number; to: number; key: number } | null>(null);
   const play = useSound(sound);
@@ -172,7 +173,7 @@ export default function Game() {
           key={gameId}
           board={board} state={state} colors={colors}
           interactive={!cpuTurn && !state.over && !menu && demo === null}
-          onBand={onBand} ghost={ghost}
+          onBand={onBand} ghost={ghost} resetView={resetView}
         />
       </div>
 
@@ -185,6 +186,7 @@ export default function Game() {
           <span>Triangle Chess</span>
         </div>
         <div className="actions">
+          <button onClick={() => setResetView((n) => n + 1)} aria-label="Reset view" title="Reset view">⟲</button>
           <button onClick={() => setSound((s) => !s)} aria-label="Toggle sound">{sound ? "🔊" : "🔇"}</button>
           <button onClick={() => setRules(true)}>Rules</button>
           <button onClick={openMenu}>New</button>
@@ -324,7 +326,7 @@ export default function Game() {
               <li>Don&apos;t leave a triangle with two sides done: the next player will take it.</li>
               <li>When the board is full, the most triangles wins.</li>
             </ol>
-            <p className="sub">No hints: if a band isn&apos;t allowed it snaps back and you try again.</p>
+            <p className="sub">No hints: if a band isn&apos;t allowed it snaps back and you try again. Drag anywhere off the pegs to turn and tilt the board; pinch or scroll to zoom; ⟲ resets the view.</p>
             <button className="primary" onClick={() => setRules(false)}>Got it</button>
             <button className="ghost" onClick={startDemo}>▶ Watch how to play</button>
           </div>

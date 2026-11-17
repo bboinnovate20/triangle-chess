@@ -14,6 +14,7 @@ npm run build    # static site in ./out (deploy anywhere, or push to Vercel)
 - `app/globals.css` — UI styling
 
 Play: 2–5 players on one device or against CPU players; drag a band or tap two pegs.
+Drag anywhere off the pegs to turn and tilt the board, pinch or scroll to zoom, ⟲ resets the view.
 
 Rules: stretch one band per turn in a straight line (1–3 gaps), no overlapping bands;
 closing a small triangle claims it; most triangles wins. Change `MAX_BAND` in `lib/game.ts` to tune.

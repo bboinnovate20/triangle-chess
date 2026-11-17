@@ -117,4 +117,4 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 .coach .steps i.on { background: #ffc15e; }
 .coach .row { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
 .coach .primary { margin: 0; padding: 10px 16px; font-size: 14px; }
-@media (max-width: 480px) { .hint small { display: none; } .card { padding: 6px 9px; gap: 6px; } .card .name { font-size: 12px; } .card .pts { font-size: 15px; } }
+@media (max-width: 480px) { .brand { font-size: 15px; white-space: nowrap; } .actions { gap: 4px; } .actions button { padding: 8px 10px; } .hint small { display: none; } .card { padding: 6px 9px; gap: 6px; } .card .name { font-size: 12px; } .card .pts { font-size: 15px; } }
